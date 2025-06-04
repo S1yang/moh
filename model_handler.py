@@ -141,10 +141,8 @@ class LlavaNextHandler(BaseModelHandler):
     
     def generate_response(self, prompt, image):
         prompt_llava34 = f"<|im_start|>system\nAnswer the questions.<|im_end|><|im_start|>user\n<image>\n{prompt}<|im_end|><|im_start|>assistant\n"
-        messages = [{ "role": "user", "content": prompt_llava34}]
-        text_inputs = self.processor.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
-        inputs = self.processor(text=text_inputs, images=image, return_tensors='pt').to("cuda")
-
+        # 直接传字符串
+        inputs = self.processor(text=prompt_llava34, images=image, return_tensors='pt').to("cuda")
         output = self.model.generate(**inputs, max_new_tokens=200)
         decoded_output = self.processor.batch_decode(output, skip_special_tokens=True)
         response = decoded_output[0].split("assistant\n \n")[-1].strip()
@@ -156,7 +154,6 @@ def get_model(model_name, model_size, model_path, device_map):
         "minicpm": MiniCPMHandler,
         "cogvlm2": CogVLM2Handler,
         "llavanext": LlavaNextHandler,
-        "llava-hf": LlavaHFHandler,
     }
     
     if model_name.lower() in model_handlers:
@@ -164,29 +161,3 @@ def get_model(model_name, model_size, model_path, device_map):
     else:
         raise ValueError(f"Model {model_name} not recognized. Available models: {list(model_handlers.keys())}")
     
-class LlavaHFHandler:
-    def __init__(self, model_name, model_size, model_path, device_map):
-        self.model_name = model_name
-        self.model_size = model_size
-        self.processor, self.model = self.init_model(model_path, device_map)
-
-    def init_model(self, model_path, device_map):
-        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=True)
-        model = AutoModelForVision2Seq.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True,
-            trust_remote_code=True,
-            device_map=device_map,
-        )
-        return processor, model
-
-    def generate_response(self, prompt, image):
-        prompt_str = "<image>\n" + prompt
-        inputs = self.processor(
-            text=prompt_str, images=image, return_tensors="pt"
-        ).to(self.model.device)
-        with torch.no_grad():
-            output = self.model.generate(**inputs, max_new_tokens=128)
-        decoded = self.processor.batch_decode(output, skip_special_tokens=True)
-        return decoded[0].strip()
